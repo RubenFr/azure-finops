@@ -35,7 +35,7 @@ Function Invoke-Get ($url, $headers) {
         }
 
         do {
-            # Spleep 30 seconds
+            # Sleep 30 seconds
             Write-Warning "Sleeping 30 seconds..."
             Start-Sleep -Seconds 30
 
