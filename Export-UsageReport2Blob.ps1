@@ -7,6 +7,10 @@
     Run every day
 #>
 
+Import-Module Az.Accounts
+Import-Module Az.Storage
+
+
 Function Get-HeaderAccessToken {
     $azContext = Get-AzContext
     $azProfile = [Microsoft.Azure.Commands.Common.Authentication.Abstractions.AzureRmProfileProvider]::Instance.Profile
@@ -17,6 +21,7 @@ Function Get-HeaderAccessToken {
         'Authorization' = 'Bearer ' + $token.AccessToken
     }
 }
+
 
 Function Invoke-Get ($url, $headers) {
     try {
@@ -55,6 +60,7 @@ Function Invoke-Get ($url, $headers) {
     return $response
 }
 
+
 Function Get-Usage ($date) {
     $scope = "THE SCOPE YOU WANT TO GET THE USAGE"
     $headers = Get-HeaderAccessToken
@@ -77,49 +83,49 @@ Function Get-Usage ($date) {
     return $usage
 }
 
-Function Main {
-    $yesterday = Get-Date (Get-Date).AddDays(-1) -Format "yyyy-MM-dd"
-    $tempdir = "c:\temp\"
-    $filename = "report-usage-$($yesterday).json"
-    $storageAccountSubId = "SUBSCRIPTION ID OF THE STORAGE ACCOUNT"
-    $storageAccountRG = "RESOURCE GROUP OF THE STORAGE ACCOUNT"
-    $storageAccountName = "NAME OF THE STORAGE ACCOUNT"
-    $containerName = "CONTAINER NAME OF THE STORAGE ACCOUNT"
+############################
+######### Main #############
+############################
 
-    # Connect To Azure
-    Connect-AzAccount `
-        -Identity `
-        -AccountId "ID OF THE AUTOMATION ACCOUNT" `
-        -Subscription $storageAccountSubId
+$yesterday = Get-Date (Get-Date).AddDays(-1) -Format "yyyy-MM-dd"
+$tempdir = "c:\temp\"
+$filename = "report-usage-$($yesterday).json"
+$storageAccountSubId = "SUBSCRIPTION ID OF THE STORAGE ACCOUNT"
+$storageAccountRG = "RESOURCE GROUP OF THE STORAGE ACCOUNT"
+$storageAccountName = "NAME OF THE STORAGE ACCOUNT"
+$containerName = "CONTAINER NAME OF THE STORAGE ACCOUNT"
 
-    #azure automation temp folder
-    Write-Output "Starting getting Usage..."
-    $localfile = $tempdir + $filename
-    $usages = Get-Usage -date $yesterday
-    Write-Output "Finished! Found in total $($usages.Count) events." -Verbose
-    
-    # Output the results to the local file
-    $usages | ConvertTo-Json | Out-File $localfile
+# Connect To Azure
+Connect-AzAccount `
+    -Identity `
+    -AccountId "ID OF THE AUTOMATION ACCOUNT" `
+    -Subscription $storageAccountSubId
 
-    # Set Context
-    Set-AzContext -SubscriptionId $storageAccountSubId | Out-Null
+#azure automation temp folder
+Write-Output "Starting getting Usage..."
+$localfile = $tempdir + $filename
+$usages = Get-Usage -date $yesterday
+Write-Output "Finished! Found in total $($usages.Count) events." -Verbose
 
-    # Get Storage Account
-    $StorageAccount = Get-AzStorageAccount `
-        -ResourceGroupName $storageAccountRG `
-        -Name $storageAccountName
-    $Context = $StorageAccount.Context
+# Output the results to the local file
+$usages | ConvertTo-Json | Out-File $localfile
 
-    # upload a file to the default account (inferred) access tier
-    $Blob = @{
-        File             = $localfile
-        Container        = $ContainerName
-        Blob             = $filename
-        Context          = $Context
-        StandardBlobTier = 'Hot'
-    }
-    Write-Output "Uploading $filename to $ContainerName" -Verbose
-    Set-AzStorageBlobContent @Blob
+# Set Context
+Set-AzContext -SubscriptionId $storageAccountSubId | Out-Null
+
+# Get Storage Account
+$StorageAccount = Get-AzStorageAccount `
+    -ResourceGroupName $storageAccountRG `
+    -Name $storageAccountName
+$Context = $StorageAccount.Context
+
+# upload a file to the default account (inferred) access tier
+$Blob = @{
+    File             = $localfile
+    Container        = $ContainerName
+    Blob             = $filename
+    Context          = $Context
+    StandardBlobTier = 'Hot'
 }
-
-Main
+Write-Output "Uploading $filename to $ContainerName" -Verbose
+Set-AzStorageBlobContent @Blob
