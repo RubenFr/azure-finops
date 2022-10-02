@@ -6,7 +6,10 @@
     Get all the budgets and current spend of a subscription/mg and upload the results to a storage account.
 #>
 
+Import-Module Az.Accounts
+Import-Module Az.Storage
 $WarningPreference = 'Ignore'
+
 
 Function Get-HeaderAccessToken {
     $azContext = Get-AzContext
@@ -18,6 +21,7 @@ Function Get-HeaderAccessToken {
         'Authorization' = 'Bearer ' + $token.AccessToken
     }
 }
+
 
 Function Invoke-GetRequest ($url) {
     $headers = Get-HeaderAccessToken
@@ -56,6 +60,7 @@ Function Invoke-GetRequest ($url) {
     }
     return $response
 }
+
 
 Function Get-Budgets ( $scope ) {
     $apiversion = "2021-10-01"
