@@ -3,12 +3,27 @@
     Creator: RubenFr
     
     Comments: 
-    Get all the usage details of a specific day (by default one day ago) and upload the results to a storage account.
+    Get all the subscriptions' usage details of a specific day (by default one day ago) and upload the results to a storage account.
     Run every day
 #>
 
 Import-Module Az.Accounts
 Import-Module Az.Storage
+
+
+Function Connect-Azure {
+	try {
+		Connect-AzAccount `
+			-Identity `
+			-AccountId (Get-AutomationVariable -Name "splunk-MI") `
+			-Subscription $storageAccountSubId
+		| Out-Null
+	}
+	catch {
+		Write-Error "Error while connecting to Azure..."
+		Connect-Azure
+	}
+}
 
 
 Function Get-HeaderAccessToken {
@@ -61,33 +76,35 @@ Function Invoke-Get ($url, $headers) {
 }
 
 
-Function Get-Usage ($date) {
-    $scope = "THE SCOPE YOU WANT TO GET THE USAGE"
+Function Get-Usage ($SubscriptionId, $Date) {
+    $scope = "subscriptions/$subscriptionId"
     $headers = Get-HeaderAccessToken
     $apiversion = "2021-10-01";
     $filter = "properties/usageStart eq '$($date)' and properties/usageEnd eq '$($date)'"
-    $url = "https://management.azure.com/$scope/providers/Microsoft.Consumption/usageDetails?api-version=$($apiversion)&`$filter=$filter"
+    $expand = "properties/additionalInfo"
+    $url = "https://management.azure.com/$scope/providers/Microsoft.Consumption/usageDetails?api-version=$($apiversion)&`$filter=$filter&`$expand=$expand"
     $usage = @()
 
     $response = Invoke-Get $url $headers
     $usage += $response.value
-    Write-Warning "Found $($usage.Count) events"
+    # Write-Warning "Found $($usage.Count) events"
 
     while ( $response.nextLink ) {
         $nextLink = $response.nextLink
         $response = Invoke-Get $nextLink $headers
         $usage += $response.value
-        Write-Warning "Found $($usage.Count) events"
+        # Write-Warning "Found $($usage.Count) events"
         
     }
     return $usage
 }
 
-############################
-######### Main #############
-############################
+########################################
+########## MAIN ########################
+########################################
+Write-Output "Starting - $(Get-Date)`n"
 
-$yesterday = Get-Date (Get-Date).AddDays(-1) -Format "yyyy-MM-dd"
+$yesterday = Get-Date (Get-Date).AddDays(-2) -Format "yyyy-MM-dd"
 $tempdir = "c:\temp\"
 $filename = "report-usage-$($yesterday).json"
 $storageAccountSubId = "SUBSCRIPTION ID OF THE STORAGE ACCOUNT"
@@ -96,19 +113,28 @@ $storageAccountName = "NAME OF THE STORAGE ACCOUNT"
 $containerName = "CONTAINER NAME OF THE STORAGE ACCOUNT"
 
 # Connect To Azure
-Connect-AzAccount `
-    -Identity `
-    -AccountId "ID OF THE AUTOMATION ACCOUNT" `
-    -Subscription $storageAccountSubId
+Connect-Azure
 
 #azure automation temp folder
-Write-Output "Starting getting Usage..."
+Write-Output "Starting getting Usage for $date..."
 $localfile = $tempdir + $filename
-$usages = Get-Usage -date $yesterday
-Write-Output "Finished! Found in total $($usages.Count) events." -Verbose
+
+$consumption_usage = @()
+Get-AzSubscription | ? { $_.State -eq 'Enabled' -and $_.Name -ne "Azure Pass - Sponsorship" } | Sort-Object Name | 
+% {
+    $usage = Get-Usage -SubscriptionId $_.Id -Date $date
+    $consumption_usage += $usage
+	
+	$properties = $usage.properties
+    Write-Output "$($_.Name) -> Usage = $($usage.count) events; Cost = $(($properties | Measure-Object cost -Sum).Sum)`$"
+}
+Write-Output "Finished! Found in total $($consumption_usage.Count) events." -Verbose
 
 # Output the results to the local file
-$usages | ConvertTo-Json | Out-File $localfile
+$consumption_usage | ConvertTo-Json | Out-File $localfile
+
+# Starting uploading results to blob
+Write-Output "`nUploading $filename to $containerName..."
 
 # Set Context
 Set-AzContext -SubscriptionId $storageAccountSubId | Out-Null
@@ -122,10 +148,18 @@ $Context = $StorageAccount.Context
 # upload a file to the default account (inferred) access tier
 $Blob = @{
     File             = $localfile
-    Container        = $ContainerName
+    Container        = $containerName
     Blob             = $filename
     Context          = $Context
-    StandardBlobTier = 'Hot'
+    StandardBlobTier = 'Cool'
 }
-Write-Output "Uploading $filename to $ContainerName" -Verbose
-Set-AzStorageBlobContent @Blob
+
+try {
+	Set-AzStorageBlobContent @Blob -ErrorAction Stop | Out-Null
+	Write-Output "File $filename successfuly uploaded to $containerName!"
+}
+catch {
+    Write-Warning "Error while uploading $filename to $containerName."
+}
+
+Write-Output "`nFinished - $(Get-Date)`n"
