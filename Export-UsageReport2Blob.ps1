@@ -15,7 +15,7 @@ Function Connect-Azure {
 	try {
 		Connect-AzAccount `
 			-Identity `
-			-AccountId (Get-AutomationVariable -Name "splunk-MI") `
+			-AccountId "MANAGED INDENTITY CLIENT ID" `
 			-Subscription $storageAccountSubId
 		| Out-Null
 	}
