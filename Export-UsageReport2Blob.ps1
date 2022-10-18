@@ -3,8 +3,9 @@
     Creator: RubenFr
     
     Comments: 
-    Get all the subscriptions' usage details of a specific day (by default one day ago) and upload the results to a storage account.
+    Get all the subscriptions' usage details of a specific day (by default two days ago) and upload the results to a storage account.
     Run every day
+    Consumption Usage can take from 24h to 48h to update. So if you run the script to get data from less than 42h you might get partial results.
 #>
 
 Import-Module Az.Accounts
@@ -49,13 +50,13 @@ Function Invoke-Get ($url, $headers) {
         $statusCode = $_.Exception.Response.StatusCode.value__
 
         if ( $statusCode -ne 429 ) {
-            Write-Error "StatusCode:" $statusCode 
-            Write-Error "StatusDescription:" $_.Exception.Response.ReasonPhrase
-            return $usage
+            Write-Error "StatusCode: $statusCode" 
+            Write-Error "StatusDescription: $_.Exception.Response.ReasonPhrase"
+            # return $usage
         }
 
         do {
-            # Sleep 30 seconds
+            # Spleep 30 seconds
             Write-Warning "Sleeping 30 seconds..."
             Start-Sleep -Seconds 30
 
@@ -72,7 +73,8 @@ Function Invoke-Get ($url, $headers) {
         }
         while ( $statusCode -eq 429 )
     }
-    return $response
+    
+	return $response
 }
 
 
@@ -87,15 +89,13 @@ Function Get-Usage ($SubscriptionId, $Date) {
 
     $response = Invoke-Get $url $headers
     $usage += $response.value
-    # Write-Warning "Found $($usage.Count) events"
 
     while ( $response.nextLink ) {
         $nextLink = $response.nextLink
         $response = Invoke-Get $nextLink $headers
-        $usage += $response.value
-        # Write-Warning "Found $($usage.Count) events"
-        
+        $usage += $response.value        
     }
+    
     return $usage
 }
 
